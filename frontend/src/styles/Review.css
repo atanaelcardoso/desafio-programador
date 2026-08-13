@@ -1,0 +1,211 @@
+.review-container {
+  width: 100%;
+}
+
+.review-header {
+  background: white;
+  padding: 1.5rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+.review-header h2 {
+  color: #173772;
+  margin: 0;
+}
+
+.review-actions {
+  display: flex;
+  gap: 1rem;
+}
+
+.back-button,
+.edit-button,
+.save-button,
+.download-button {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.back-button {
+  background: #f0f0f0;
+  color: #333;
+}
+
+.back-button:hover {
+  background: #ddd;
+}
+
+.edit-button {
+  background: #ffc107;
+  color: #333;
+}
+
+.edit-button:hover {
+  background: #ffb300;
+}
+
+.save-button {
+  background: #4caf50;
+  color: white;
+}
+
+.save-button:hover {
+  background: #45a049;
+}
+
+.download-button {
+  background: #173772;
+  color: white;
+}
+
+.download-button:hover {
+  background: #1a3f8f;
+}
+
+.loading-card,
+.error-card {
+  background: white;
+  padding: 2rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  text-align: center;
+}
+
+.error-card {
+  border-left: 4px solid #dc3545;
+}
+
+.error-card h2 {
+  color: #dc3545;
+  margin-bottom: 1rem;
+}
+
+.error-card p {
+  margin-bottom: 1.5rem;
+  color: #666;
+}
+
+.spinner {
+  width: 50px;
+  height: 50px;
+  border: 4px solid #f0f0f0;
+  border-top-color: #173772;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto 1rem;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.review-content {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+}
+
+.data-section,
+.download-section {
+  background: white;
+  padding: 1.5rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.data-section h3,
+.download-section h3 {
+  color: #173772;
+  margin-bottom: 1rem;
+}
+
+.json-preview {
+  background: #f5f5f5;
+  padding: 1rem;
+  border-radius: 4px;
+  overflow-x: auto;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.download-controls {
+  display: flex;
+  gap: 1rem;
+}
+
+.download-controls select {
+  flex: 1;
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.95rem;
+  font-family: inherit;
+}
+
+.download-controls select:focus {
+  outline: none;
+  border-color: #173772;
+  box-shadow: 0 0 0 3px rgba(23, 55, 114, 0.1);
+}
+
+@media (max-width: 1024px) {
+  .review-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+
+  .review-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .review-content {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .review-header {
+    padding: 1rem;
+  }
+
+  .review-header h2 {
+    font-size: 1.3rem;
+  }
+
+  .review-actions {
+    gap: 0.5rem;
+  }
+
+  .back-button,
+  .edit-button,
+  .save-button {
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem;
+  }
+
+  .data-section,
+  .download-section {
+    padding: 1rem;
+  }
+
+  .json-preview {
+    font-size: 0.75rem;
+    max-height: 300px;
+  }
+}
