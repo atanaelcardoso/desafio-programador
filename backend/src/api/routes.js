@@ -15,10 +15,6 @@ import * as XLSX from 'xlsx';
 
 const router = express.Router();
 
-/**
- * POST /api/transcricoes
- * Enviar PDF para processamento
- */
 router.post(
   '/transcricoes',
   upload.single('arquivo'),
@@ -43,10 +39,6 @@ router.post(
   }
 );
 
-/**
- * GET /api/transcricoes/:id
- * Obter status e resultado da transcrição
- */
 router.get('/transcricoes/:id', (req, res) => {
   try {
     const { id } = req.params;
@@ -68,10 +60,6 @@ router.get('/transcricoes/:id', (req, res) => {
   }
 });
 
-/**
- * PUT /api/transcricoes/:id
- * Atualizar transcrição (correções do usuário)
- */
 router.put('/transcricoes/:id', (req, res) => {
   try {
     const { id } = req.params;
@@ -90,10 +78,6 @@ router.put('/transcricoes/:id', (req, res) => {
   }
 });
 
-/**
- * GET /api/transcricoes/:id/planilha
- * Baixar transcrição como planilha
- */
 router.get('/transcricoes/:id/planilha', (req, res) => {
   try {
     const { id } = req.params;
@@ -123,12 +107,12 @@ router.get('/transcricoes/:id/planilha', (req, res) => {
     } else if (formato === 'xlsx') {
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.aoa_to_sheet(rows.map(r => r.data));
-      
+
       const headerStyle = {
         fill: { fgColor: { rgb: 'FF173772' } },
         font: { bold: true, color: { rgb: 'FFFFFFFF' } }
       };
-      
+
       const warningStyle = {
         fill: { fgColor: { rgb: 'FFFFF3CD' } }
       };
@@ -162,10 +146,10 @@ router.get('/transcricoes/:id/planilha', (req, res) => {
       }
 
       XLSX.utils.book_append_sheet(wb, ws, 'Transcrição');
-      
+
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.setHeader('Content-Disposition', `attachment; filename="transcricao-${id}.xlsx"`);
-      
+
       const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
       res.send(buffer);
     } else {
@@ -222,7 +206,7 @@ function transformCartaoPontoToSpreadsheet(value) {
           const timeValue = (isOut && punch.kind === 'OUT') || (!isOut && punch.kind === 'IN')
             ? punch.time_raw
             : '';
-          
+
           if (timeValue.includes('?')) hasUncertainty = true;
           row.push(timeValue);
         } else {
@@ -250,9 +234,6 @@ function transformCartaoPontoToSpreadsheet(value) {
   return rows;
 }
 
-/**
- * Nova Função: Transforma Ficha Financeira para Excel mapeando as bases
- */
 function transformHoleriteToSpreadsheet(value) {
   const rows = [];
   rows.push({ data: ['Página', 'Ano', 'Mês', 'Indicador / Base Financeira', 'Valor (R$)'], alert: null });
@@ -284,9 +265,6 @@ function transformHoleriteToSpreadsheet(value) {
   return rows;
 }
 
-/**
- * Nova Função: Verifica se duas datas são sequenciais
- */
 function isSequentialDate(prevRaw, currRaw) {
   try {
     const prevParts = prevRaw.match(/(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})/);
@@ -303,9 +281,6 @@ function isSequentialDate(prevRaw, currRaw) {
   }
 }
 
-/**
- * Helper para conversão simples em CSV
- */
 function rowsToCSV(rows) {
   return rows.map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
 }

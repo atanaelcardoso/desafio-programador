@@ -1,22 +1,19 @@
 import multer from 'multer';
 import { Buffer } from 'buffer';
 
-// Storage em memória
 const storage = multer.memoryStorage();
 
-// Filtro de arquivo - validar se é PDF
 const fileFilter = (req, file, cb) => {
-  // Validar MIME type
+
   if (file.mimetype !== 'application/pdf') {
     return cb(new Error('Apenas arquivos PDF são aceitos'));
   }
-  
+
   cb(null, true);
 };
 
-// Limits
 const limits = {
-  fileSize: 50 * 1024 * 1024 // 50MB
+  fileSize: 50 * 1024 * 1024
 };
 
 export const upload = multer({
@@ -25,15 +22,11 @@ export const upload = multer({
   limits
 });
 
-/**
- * Middleware para validar magic bytes do PDF (%PDF)
- */
 export const validatePdfMagicBytes = (req, res, next) => {
   if (!req.file) {
     return res.status(400).json({ error: 'Nenhum arquivo enviado' });
   }
 
-  // Verificar magic bytes PDF: %PDF
   const magicBytes = req.file.buffer.slice(0, 4).toString('ascii');
   if (!magicBytes.startsWith('%PDF')) {
     return res.status(400).json({
@@ -44,12 +37,9 @@ export const validatePdfMagicBytes = (req, res, next) => {
   next();
 };
 
-/**
- * Middleware para validar tipo de documento
- */
 export const validateDocumentType = (req, res, next) => {
   const { tipo } = req.body;
-  
+
   if (!tipo || !['cartao-ponto', 'holerite'].includes(tipo)) {
     return res.status(400).json({
       error: 'Tipo de documento inválido. Aceitos: cartao-ponto, holerite'
@@ -59,9 +49,6 @@ export const validateDocumentType = (req, res, next) => {
   next();
 };
 
-/**
- * Middleware para error handling do multer
- */
 export const handleMulterError = (err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
@@ -70,7 +57,7 @@ export const handleMulterError = (err, req, res, next) => {
       });
     }
   }
-  
+
   if (err.message) {
     return res.status(400).json({ error: err.message });
   }

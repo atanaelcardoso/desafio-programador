@@ -14,7 +14,6 @@ function Review() {
   const [editing, setEditing] = useState(false)
   const [downloadFormat, setDownloadFormat] = useState('xlsx')
 
-  // Polling para status
   useEffect(() => {
     if (!id) {
       navigate('/')
@@ -46,7 +45,6 @@ function Review() {
 
     poll()
 
-    // Continuar polling enquanto estiver processando
     const interval = setInterval(() => {
       if (transcription?.status === 'processando') {
         poll()

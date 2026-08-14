@@ -5,20 +5,15 @@ import { parseHolerite } from '../parsers/holerite.js';
 import * as pdfjsLib from 'pdfjs-dist';
 import Tesseract from 'tesseract.js';
 
-// Configurar worker do PDF.js
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   '../../node_modules/pdfjs-dist/build/pdf.worker.mjs',
   import.meta.url
 ).href;
 
-// Pool de workers Tesseract
 let tesseractWorkers = [];
 let activeWorkerCount = 0;
 const WORKER_POOL_SIZE = 3;
 
-/**
- * Inicializar pool de workers Tesseract
- */
 async function initTesseractPool() {
   if (tesseractWorkers.length > 0) return;
 
@@ -42,11 +37,7 @@ async function initTesseractPool() {
   console.log('✅ Pool Tesseract pronto');
 }
 
-/**
- * Obter worker disponível do pool
- */
 async function getAvailableWorker() {
-  // Procurar worker disponível
   for (const w of tesseractWorkers) {
     if (!w.busy) {
       w.busy = true;
@@ -55,7 +46,6 @@ async function getAvailableWorker() {
     }
   }
 
-  // Se todos ocupados, aguardar 100ms
   return new Promise(resolve => {
     const checkInterval = setInterval(() => {
       for (const w of tesseractWorkers) {
@@ -70,17 +60,11 @@ async function getAvailableWorker() {
   });
 }
 
-/**
- * Liberar worker
- */
 function releaseWorker(workerObj) {
   workerObj.busy = false;
   activeWorkerCount--;
 }
 
-/**
- * Extrair texto de um PDF usando PDF.js
- */
 export async function extractTextFromPdf(pdfBuffer) {
   try {
     const binary = Buffer.isBuffer(pdfBuffer)
@@ -96,10 +80,9 @@ export async function extractTextFromPdf(pdfBuffer) {
       const text = textContent.items
         .map(item => item.str)
         .join(' ');
-      
-      // Considerar "vazio" se texto < 50 caracteres (provável PDF escaneado)
+
       const isEmpty = text.trim().length < 50;
-      
+
       textPerPage.push({
         pageNum: i,
         text: text.trim(),
@@ -115,9 +98,6 @@ export async function extractTextFromPdf(pdfBuffer) {
   }
 }
 
-/**
- * Aplicar OCR a uma página (sem camada de texto)
- */
 async function ocrPageText(pageNum, text, timeout = 30000) {
   try {
     if (!text || text.trim().length === 0) {
@@ -140,19 +120,15 @@ async function ocrPageText(pageNum, text, timeout = 30000) {
     return result.data.text.trim();
   } catch (err) {
     console.error(`Erro no OCR página ${pageNum}:`, err.message);
-    return text; // Fallback: devolver texto extraído mesmo que ruim
+    return text;
   }
 }
 
-/**
- * Processar transcrição em background
- */
 export async function processTranscription(id, pdfBuffer, tipo) {
   const startTime = Date.now();
-  const maxDuration = 10 * 60 * 1000; // 10 minutos
+  const maxDuration = 10 * 60 * 1000;
 
   try {
-    // Atualizar status para processando
     transcriptionStore.update(id, {
       status: 'processando',
       value: null,
@@ -161,16 +137,13 @@ export async function processTranscription(id, pdfBuffer, tipo) {
 
     console.log(`📄 Processando ${tipo} [ID: ${id}]...`);
 
-    // Extrair texto do PDF
     const textPerPage = await extractTextFromPdf(pdfBuffer);
-    
-    // Inicializar pool Tesseract se necessário
+
     const needsOCR = textPerPage.some(p => p.requiresOCR);
     if (needsOCR) {
       await initTesseractPool();
     }
 
-    // Aplicar OCR onde necessário
     const processedPages = [];
     for (const page of textPerPage) {
       if (Date.now() - startTime > maxDuration) {
@@ -185,8 +158,7 @@ export async function processTranscription(id, pdfBuffer, tipo) {
 
       processedPages.push(page);
     }
-    
-    // Chamar parser apropriado
+
     let result;
     if (tipo === 'cartao-ponto') {
       result = parseCartaoPonto(processedPages);
@@ -196,7 +168,6 @@ export async function processTranscription(id, pdfBuffer, tipo) {
       throw new Error('Tipo de documento não suportado');
     }
 
-    // Atualizar com resultado
     transcriptionStore.update(id, {
       status: 'concluido',
       value: result,
@@ -214,13 +185,9 @@ export async function processTranscription(id, pdfBuffer, tipo) {
   }
 }
 
-/**
- * Criar nova transcrição (retorna ID imediatamente)
- */
 export function createTranscription(pdfBuffer, tipo) {
   const id = uuidv4();
 
-  // Guardar no store com status inicial
   transcriptionStore.set(id, {
     id,
     tipo,
@@ -237,23 +204,16 @@ export function createTranscription(pdfBuffer, tipo) {
   return id;
 }
 
-/**
- * Obter transcrição
- */
 export function getTranscription(id) {
   return transcriptionStore.get(id);
 }
 
-/**
- * Atualizar transcrição (usuário corrigindo na interface)
- */
 export function updateTranscription(id, value) {
   const trans = transcriptionStore.get(id);
   if (!trans) {
     throw new Error('Transcrição não encontrada');
   }
 
-  // Validar estrutura básica
   if (!value || !value.pages || !Array.isArray(value.pages)) {
     throw new Error('Formato de transcrição inválido');
   }

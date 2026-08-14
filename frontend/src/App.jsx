@@ -4,7 +4,6 @@ import Upload from './pages/Upload'
 import Review from './pages/Review'
 import './App.css'
 
-// Context global
 export const AppContext = createContext()
 
 function App() {

@@ -32,7 +32,7 @@ function Upload() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    
+
     if (!file) {
       setError('Selecione um arquivo PDF')
       return
@@ -52,7 +52,6 @@ function Upload() {
 
       const { id } = response.data
 
-      // Guardar no contexto e redirecionar para review
       setTranscription({
         id,
         tipo,
@@ -61,7 +60,6 @@ function Upload() {
         error: null
       })
 
-      // Iniciar polling
       navigate(`/review/${id}`)
     } catch (err) {
       setError(err.response?.data?.error || err.message || 'Erro ao enviar arquivo')
@@ -74,7 +72,7 @@ function Upload() {
     <div className="upload-container">
       <div className="upload-card">
         <h2>📤 Enviar Documento</h2>
-        
+
         <form onSubmit={handleSubmit} className="upload-form">
           <div className="form-group">
             <label htmlFor="tipo">Tipo de Documento</label>
