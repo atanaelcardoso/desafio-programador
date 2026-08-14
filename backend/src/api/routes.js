@@ -18,13 +18,6 @@ const router = express.Router();
 /**
  * POST /api/transcricoes
  * Enviar PDF para processamento
- * 
- * Multipart form-data:
- * - arquivo: file
- * - tipo: 'cartao-ponto' | 'holerite'
- * 
- * Response: 202 Accepted
- * { "id": "uuid" }
  */
 router.post(
   '/transcricoes',
@@ -53,15 +46,6 @@ router.post(
 /**
  * GET /api/transcricoes/:id
  * Obter status e resultado da transcrição
- * 
- * Response: 200 OK
- * {
- *   "id": "uuid",
- *   "tipo": "cartao-ponto",
- *   "status": "concluido",
- *   "erro": null,
- *   "value": { ... }
- * }
  */
 router.get('/transcricoes/:id', (req, res) => {
   try {
@@ -87,11 +71,6 @@ router.get('/transcricoes/:id', (req, res) => {
 /**
  * PUT /api/transcricoes/:id
  * Atualizar transcrição (correções do usuário)
- * 
- * Body: { "value": { pages: [...] } }
- * 
- * Response: 200 OK
- * { "id": "uuid", ... }
  */
 router.put('/transcricoes/:id', (req, res) => {
   try {
@@ -114,10 +93,6 @@ router.put('/transcricoes/:id', (req, res) => {
 /**
  * GET /api/transcricoes/:id/planilha
  * Baixar transcrição como planilha
- * 
- * Query: ?formato=xlsx|csv|json
- * 
- * Response: arquivo binário ou JSON
  */
 router.get('/transcricoes/:id/planilha', (req, res) => {
   try {
@@ -136,11 +111,9 @@ router.get('/transcricoes/:id/planilha', (req, res) => {
       });
     }
 
-    // Transformar em planilha (com alertas)
     const rows = transformToSpreadsheet(trans);
 
     if (formato === 'json') {
-      // Retornar JSON com dados brutos
       res.json({ data: rows });
     } else if (formato === 'csv') {
       const csv = rowsToCSV(rows.map(r => r.data));
@@ -151,7 +124,6 @@ router.get('/transcricoes/:id/planilha', (req, res) => {
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.aoa_to_sheet(rows.map(r => r.data));
       
-      // Aplicar estilos: cabeçalho + alertas
       const headerStyle = {
         fill: { fgColor: { rgb: 'FF173772' } },
         font: { bold: true, color: { rgb: 'FFFFFFFF' } }
@@ -163,12 +135,9 @@ router.get('/transcricoes/:id/planilha', (req, res) => {
 
       const errorStyle = {
         fill: { fgColor: { rgb: 'FFF8D7DA' } },
-        border: {
-          left: { style: 'thin', color: { rgb: 'FFDC3545' } }
-        }
+        border: { left: { style: 'thin', color: { rgb: 'FFDC3545' } } }
       };
 
-      // Aplicar estilos por linha
       for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
         const row = rows[rowIdx];
         let style = rowIdx === 0 ? headerStyle : null;
@@ -208,9 +177,6 @@ router.get('/transcricoes/:id/planilha', (req, res) => {
   }
 });
 
-/**
- * Transformar JSON de transcrição em linhas de planilha
- */
 function transformToSpreadsheet(trans) {
   const { tipo, value } = trans;
 
@@ -223,19 +189,11 @@ function transformToSpreadsheet(trans) {
   return [];
 }
 
-/**
- * Transformar cartão de ponto para linhas de planilha
- * Cada linha tem: [rowData, alertType]
- * alertType: null | 'warning' | 'error'
- */
 function transformCartaoPontoToSpreadsheet(value) {
   const rows = [];
-
-  // Cabeçalho
   const headers = ['Data'];
   let maxPunches = 0;
 
-  // Encontrar o número máximo de batidas
   for (const page of value.pages) {
     for (const day of page.days) {
       maxPunches = Math.max(maxPunches, day.punches.length);
@@ -249,17 +207,11 @@ function transformCartaoPontoToSpreadsheet(value) {
 
   rows.push({ data: headers, alert: null });
 
-  // Dados
   let prevDate = null;
   for (const page of value.pages) {
     for (const day of page.days) {
       const row = [day.date_raw];
-      let hasUncertainty = false;
-
-      // Verificar se tem ?
-      if (day.date_raw.includes('?')) {
-        hasUncertainty = true;
-      }
+      let hasUncertainty = day.date_raw.includes('?');
 
       for (let i = 0; i < maxPunches * 2; i++) {
         const punchIdx = Math.floor(i / 2);
@@ -271,30 +223,21 @@ function transformCartaoPontoToSpreadsheet(value) {
             ? punch.time_raw
             : '';
           
-          if (timeValue.includes('?')) {
-            hasUncertainty = true;
-          }
+          if (timeValue.includes('?')) hasUncertainty = true;
           row.push(timeValue);
         } else {
           row.push('');
         }
       }
 
-      // Determinar tipo de alerta
       let alert = null;
-      
-      // Batidas ímpares = aviso
       if (day.punches.length % 2 !== 0) {
         alert = 'warning';
         hasUncertainty = true;
       }
-
-      // Data não-sequencial = erro (vermelho)
       if (prevDate && !isSequentialDate(prevDate, day.date_raw)) {
         alert = 'error';
       }
-
-      // Se tem ?, marcar como warning (mas error ganha sobre warning)
       if (hasUncertainty && !alert) {
         alert = 'warning';
       }
@@ -308,140 +251,63 @@ function transformCartaoPontoToSpreadsheet(value) {
 }
 
 /**
- * Verificar se duas datas são sequenciais
- */
-function isSequentialDate(prevRaw, currRaw) {
-  try {
-    // Extrair partes da data
-    const prevParts = prevRaw.match(/(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})/);
-    const currParts = currRaw.match(/(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})/);
-
-    if (!prevParts || !currParts) return true; // Se não conseguir parsear, considerar sequencial
-
-    const prevDay = parseInt(prevParts[1], 10);
-    const prevMonth = parseInt(prevParts[2], 10);
-    const prevYear = parseInt(prevParts[3], 10);
-
-    const currDay = parseInt(currParts[1], 10);
-    const currMonth = parseInt(currParts[2], 10);
-    const currYear = parseInt(currParts[3], 10);
-
-    // Criar objetos Date (compensar mês 0-indexed)
-    const prevDate = new Date(prevYear, prevMonth - 1, prevDay);
-    const currDate = new Date(currYear, currMonth - 1, currDay);
-
-    // Diferença esperada: 1 dia
-    const diffMs = currDate - prevDate;
-    const expectedMs = 24 * 60 * 60 * 1000;
-
-    return Math.abs(diffMs - expectedMs) < 1000; // Tolerância de 1s
-  } catch (err) {
-    return true; // Se erro, considerar sequencial
-  }
-}
-
-/**
- * Transformar holerite para linhas de planilha
+ * Nova Função: Transforma Ficha Financeira para Excel mapeando as bases
  */
 function transformHoleriteToSpreadsheet(value) {
   const rows = [];
+  rows.push({ data: ['Página', 'Ano', 'Mês', 'Indicador / Base Financeira', 'Valor (R$)'], alert: null });
 
-  // Coletar todas as verbas únicas
-  const allLabels = new Set();
   for (const page of value.pages) {
-    for (const field of page.fields) {
-      allLabels.add(field.label);
-    }
-  }
+    const ano = page.year || '?';
+    const mes = page.month || '?';
 
-  // Cabeçalho
-  const headers = ['Pág.', 'Mês', 'Ano', ...Array.from(allLabels)];
-  rows.push({ data: headers, alert: null });
-
-  // Dados
-  let prevMonth = null;
-  for (const page of value.pages) {
-    const row = [String(page.page), page.month, page.year];
-    let hasUncertainty = false;
-
-    // Verificar incerteza
-    if (page.month.includes('?') || page.year.includes('?')) {
-      hasUncertainty = true;
-    }
-
-    for (const label of allLabels) {
-      const field = page.fields.find(f => f.label === label);
-      const value = field ? field.value : '';
-      
-      if (value.includes('?')) {
-        hasUncertainty = true;
+    if (page.bases && page.bases.length > 0) {
+      for (const base of page.bases) {
+        rows.push({
+          data: [page.page, ano, mes, base.label, base.value],
+          alert: base.label === 'Salário Líquido' ? 'warning' : null
+        });
       }
-      row.push(value);
     }
 
-    // Determinar tipo de alerta
-    let alert = null;
-
-    // Página vazia
-    if (page.fields.length === 0) {
-      alert = 'warning';
-      hasUncertainty = true;
+    if (page.fields && page.fields.length > 0) {
+      for (const field of page.fields) {
+        rows.push({
+          data: [page.page, ano, mes, `[${field.code}] ${field.label}`, field.value],
+          alert: null
+        });
+      }
     }
-
-    // Mês não-sequencial
-    if (prevMonth && !isSequentialMonth(prevMonth, page.month)) {
-      alert = 'error';
-    }
-
-    // Se tem ?, marcar como warning
-    if (hasUncertainty && !alert) {
-      alert = 'warning';
-    }
-
-    rows.push({ data: row, alert });
-    prevMonth = page.month;
+    rows.push({ data: ['', '', '', '', ''], alert: null });
   }
 
   return rows;
 }
 
 /**
- * Verificar se dois meses são sequenciais
+ * Nova Função: Verifica se duas datas são sequenciais
  */
-function isSequentialMonth(prevMonth, currMonth) {
+function isSequentialDate(prevRaw, currRaw) {
   try {
-    const prev = parseInt(prevMonth, 10);
-    const curr = parseInt(currMonth, 10);
+    const prevParts = prevRaw.match(/(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})/);
+    const currParts = currRaw.match(/(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})/);
 
-    if (isNaN(prev) || isNaN(curr)) return true;
+    if (!prevParts || !currParts) return true;
 
-    // Dezembro (12) para Janeiro (1) é sequencial
-    if (prev === 12 && curr === 1) return true;
+    const d1 = new Date(parseInt(prevParts[3], 10), parseInt(prevParts[2], 10) - 1, parseInt(prevParts[1], 10));
+    const d2 = new Date(parseInt(currParts[3], 10), parseInt(currParts[2], 10) - 1, parseInt(currParts[1], 10));
 
-    // Caso normal
-    return curr === (prev % 12) + 1;
-  } catch (err) {
+    return d2 >= d1;
+  } catch {
     return true;
   }
 }
 
 /**
- * Converter linhas para CSV
+ * Helper para conversão simples em CSV
  */
-function rowsToCSV(rowsData) {
-  return rowsData
-    .map(row =>
-      row
-        .map(cell => {
-          const str = String(cell || '');
-          // Escapar aspas duplas
-          const escaped = str.replace(/"/g, '""');
-          // Envolver em aspas se contiver vírgula ou aspas
-          return `"${escaped}"`;
-        })
-        .join(',')
-    )
-    .join('\n');
+function rowsToCSV(rows) {
+  return rows.map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
 }
 
 export default router;

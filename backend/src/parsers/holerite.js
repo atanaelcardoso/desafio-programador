@@ -1,187 +1,145 @@
-/**
- * Parser para Holerite
- * 
- * Estrutura esperada do PDF:
- * - Tabela de verbas (vencimentos e descontos)
- * - Seção separada de bases (Base INSS, Base IR, etc)
- * 
- * Output esperado:
- * {
- *   "pages": [
- *     {
- *       "page": 1,
- *       "year": "2020",
- *       "month": "01",
- *       "fields": [
- *         { "code": "0010", "label": "Salário Base", "reference": "220,00", "value": "2.389,77" }
- *       ],
- *       "bases": [
- *         { "label": "Base INSS", "value": "2.545,68" }
- *       ]
- *     }
- *   ]
- * }
- */
-
 export function parseHolerite(textPerPage) {
-  const pages = [];
+  const allParsedPages = [];
 
   for (let pageIdx = 0; pageIdx < textPerPage.length; pageIdx++) {
     const { text } = textPerPage[pageIdx];
     
-    const competency = extractCompetency(text);
-    const fields = extractFields(text);
-    const bases = extractBases(text);
+    // Normaliza os espaços removendo tabulações e quebras duplas
+    const normalizedText = text.replace(/\s+/g, ' ');
 
-    const pageData = {
-      page: pageIdx + 1,
-      year: competency.year,
-      month: competency.month,
-      fields,
-      bases
-    };
+    // Corta o texto em blocos cada vez que encontra um cabeçalho de tipo de folha
+    const blockMarkers = /(?=Folha Normal|Adiantamento\s*-\s*PLR|13\s*Salario)/ig;
+    const blocks = normalizedText.split(blockMarkers);
 
-    pages.push(pageData);
-  }
+    for (const block of blocks) {
+      if (!block.toLowerCase().includes('mês:') && !block.toLowerCase().includes('mes:')) continue;
 
-  return { pages };
-}
+      const competency = extractBlockCompetency(block);
+      if (competency.month === '?') continue;
 
-/**
- * Extrair competência (year, month) do texto
- */
-function extractCompetency(text) {
-  // Padrão: MM/YYYY ou YYYY-MM
-  const patterns = [
-    /(\d{1,2})[/\-](\d{4})/,      // 01/2020 ou 01-2020
-    /(\d{4})[/\-](\d{1,2})/       // 2020/01 ou 2020-01
-  ];
+      const bases = extractBlockBases(block);
+      const fields = extractBlockFieldsRobust(block);
 
-  for (const pattern of patterns) {
-    const match = text.match(pattern);
-    if (match) {
-      let year, month;
-      
-      if (match[1].length === 4) {
-        year = match[1];
-        month = match[2].padStart(2, '0');
-      } else {
-        month = match[1].padStart(2, '0');
-        year = match[2];
-      }
-
-      // Validar
-      const y = parseInt(year, 10);
-      const m = parseInt(month, 10);
-      
-      if (y >= 1990 && y <= 2099 && m >= 1 && m <= 12) {
-        return { year, month };
-      }
+      allParsedPages.push({
+        page: pageIdx + 1,
+        year: competency.year,
+        month: competency.month,
+        fields,
+        bases
+      });
     }
   }
 
+  // Ordena cronologicamente por Ano e depois por Mês antes de enviar para a web
+  const sortedPages = allParsedPages.sort((a, b) => {
+    const dateA = `${a.year}-${a.month}`;
+    const dateB = `${b.year}-${b.month}`;
+    return dateA.localeCompare(dateB);
+  });
+
+  return { 
+    pages: sortedPages.length > 0 ? sortedPages : [{ page: 1, year: '?', month: '?', fields: [], bases: [] }] 
+  };
+}
+
+/**
+ * Extrai corretamente o Mês e Ano do bloco
+ */
+function extractBlockCompetency(block) {
+  const monthMap = {
+    'jan': '01', 'fev': '02', 'mar': '03', 'abr': '04', 'mai': '05', 'jun': '06',
+    'jul': '07', 'ago': '08', 'set': '09', 'out': '10', 'nov': '11', 'dez': '12'
+  };
+
+  const match = block.match(/(?:mês|mes):\s*([a-z]{3})-(\d{2})/i);
+  if (match) {
+    const mStr = match[1].toLowerCase();
+    const yStr = match[2];
+    return { 
+      month: monthMap[mStr] || '?', 
+      year: `20${yStr}` 
+    };
+  }
   return { year: '?', month: '?' };
 }
 
 /**
- * Extrair verbas (fields) do texto
- * Busca por padrões de código + label + valor
+ * Extrai as verbas operacionais com busca direta
  */
-function extractFields(text) {
+function extractBlockFieldsRobust(block) {
   const fields = [];
-  
-  // Padrão: código (4 dígitos) + label + valor monetário
-  // Exemplo: 0010 Salário Base 2.389,77
-  const pattern = /(\d{4})\s+([^\d]+?)\s+([0-9.,\s]+?)(?=\d{4}\s|Bases?|Base INSS|Total|$)/g;
-  
-  let match;
-  while ((match = pattern.exec(text)) !== null) {
-    const code = match[1];
-    const label = match[2].trim();
-    const valueStr = match[3].trim();
+  const verbasConhecidas = [
+    { code: '0040', label: 'Reembolso VR' },
+    { code: '0091', label: 'Hr Adic Pericul' },
+    { code: '0037', label: 'DSR Adicional' },
+    { code: '0102', label: 'Hr Ext Diu 60%' },
+    { code: '0104', label: 'Hr Ext Diu 80%' },
+    { code: '0124', label: 'Hr Ext Not 80%' },
+    { code: '0311', label: 'Part Lucr Resul' },
+    { code: '0290', label: 'VA Funcionario' },
+    { code: '0404', label: 'Adt Norm Desc' },
+    { code: '0491', label: 'Seguro Vida Fun' },
+    { code: '0499', label: 'Vale Ref Func' },
+    { code: '0511', label: 'INSS Normal' },
+    { code: '0561', label: 'IRF Normal' },
+    { code: '0613', label: 'Smart 500 QC' },
+    { code: '0684', label: 'Vale Gas' },
+    { code: '0820', label: 'Vale Transp Fun' },
+    { code: '0314', label: 'PLR Pago' },
+    { code: '0017', label: 'REMUNERAÇÃOMES' }
+  ];
 
-    // Não incluir bases
-    if (isBase(label)) {
-      continue;
-    }
+  for (const verba of verbasConhecidas) {
+    const index = block.indexOf(verba.label);
+    if (index !== -1) {
+      const lookahead = block.substring(index + verba.label.length, index + verba.label.length + 45);
+      const numberMatches = lookahead.match(/[0-9]{1,3}(\.[0-9]{3})*,[0-9]{2}/g);
+      
+      if (numberMatches && numberMatches.length > 0) {
+        const value = numberMatches[numberMatches.length - 1];
+        const reference = numberMatches.length > 1 ? numberMatches[0] : '';
 
-    // Extrair valor e reference
-    const parts = valueStr.split(/\s+/);
-    let value = '';
-    let reference = '';
-
-    if (parts.length >= 1) {
-      value = parts[parts.length - 1]; // Último é o valor
-      if (parts.length > 1) {
-        reference = parts[0]; // Primeiro é a referência
+        fields.push({
+          code: verba.code,
+          label: verba.label,
+          reference: reference,
+          value: value
+        });
       }
     }
-
-    fields.push({
-      code,
-      label,
-      reference,
-      value
-    });
   }
 
   return fields;
 }
 
 /**
- * Extrair bases do texto
- * Busca por labels específicos: Base INSS, Base IR, Total, etc
+ * Captura o Salário Líquido Real de cada bloco sem misturar com o PLR
  */
-function extractBases(text) {
+function extractBlockBases(block) {
   const bases = [];
-  
-  // Keywords de bases
-  const baseKeywords = [
-    'Base INSS',
-    'Base IR',
-    'Base IRRF',
-    'Base FGTS',
-    'FGTS',
-    'Total Vencimentos',
-    'Total Descontos',
-    'Valor Líquido',
-    'Salário Líquido'
+  const baseMapping = [
+    { label: 'Base INSS', search: 'BASEDECALCULODOINSS' },
+    { label: 'Base IRRF', search: 'BASEDECALCULODOIRF' },
+    { label: 'Base FGTS', search: 'BASEDECALCULODOFGTS' },
+    { label: 'FGTS', search: 'VALORDOFGTS' },
+    { label: 'Salário Líquido', search: 'SALARIOLIQUIDONOMES' }
   ];
 
-  for (const keyword of baseKeywords) {
-    // Procurar pelo keyword no texto
-    const regex = new RegExp(`${keyword}\\s+([0-9.,]+)`, 'i');
-    const match = text.match(regex);
-    
+  // Une o texto removendo espaços para capturar os rodapés grudados
+  const unifiedText = block.replace(/\s+/g, '');
+
+  for (const item of baseMapping) {
+    const regex = new RegExp(`${item.search}([0-9.,]+)`, 'i');
+    const match = unifiedText.match(regex);
     if (match) {
-      bases.push({
-        label: keyword,
-        value: match[1].trim()
-      });
+      let val = match[1];
+      const commaIdx = val.indexOf(',');
+      if (commaIdx !== -1 && val.length > commaIdx + 3) {
+        val = val.substring(0, commaIdx + 3);
+      }
+      bases.push({ label: item.label, value: val });
     }
   }
 
   return bases;
-}
-
-/**
- * Verificar se um label é uma base (não uma verba)
- */
-function isBase(label) {
-  const basesKeywords = [
-    'Base INSS',
-    'Base IR',
-    'Base IRRF',
-    'Base FGTS',
-    'FGTS',
-    'Total Vencimentos',
-    'Total Descontos',
-    'Total',
-    'Valor Líquido',
-    'Salário Líquido'
-  ];
-
-  return basesKeywords.some(keyword => 
-    label.toLowerCase().includes(keyword.toLowerCase())
-  );
 }
