@@ -1,8 +1,9 @@
 import React, { useState, useContext, createContext } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import Upload from './pages/Upload'
-import Review from './pages/Review'
+
 import './App.css'
+import Review from './infra/domain/Review'
+import Upload from './infra/domain/Upload'
 
 export const AppContext = createContext()
 

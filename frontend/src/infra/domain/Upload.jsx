@@ -1,72 +1,17 @@
-import React, { useState, useContext } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { AppContext } from '../App'
-import axios from 'axios'
-import '../styles/Upload.css'
+import React from 'react'
+import '../../styles/Upload.css'
+import { useUpload } from '../../hooks/useUpload'
 
 function Upload() {
-  const navigate = useNavigate()
-  const { transcription, setTranscription } = useContext(AppContext)
-  const [file, setFile] = useState(null)
-  const [tipo, setTipo] = useState('cartao-ponto')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
-
-  const handleFileChange = (e) => {
-    const selectedFile = e.target.files[0]
-    if (selectedFile) {
-      if (!selectedFile.type.includes('pdf')) {
-        setError('Por favor, selecione um arquivo PDF')
-        setFile(null)
-        return
-      }
-      if (selectedFile.size > 50 * 1024 * 1024) {
-        setError('Arquivo muito grande (máximo 50MB)')
-        setFile(null)
-        return
-      }
-      setFile(selectedFile)
-      setError(null)
-    }
-  }
-
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-
-    if (!file) {
-      setError('Selecione um arquivo PDF')
-      return
-    }
-
-    setLoading(true)
-    setError(null)
-
-    try {
-      const formData = new FormData()
-      formData.append('arquivo', file)
-      formData.append('tipo', tipo)
-
-      const response = await axios.post('/api/transcricoes', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      })
-
-      const { id } = response.data
-
-      setTranscription({
-        id,
-        tipo,
-        status: 'processando',
-        value: null,
-        error: null
-      })
-
-      navigate(`/review/${id}`)
-    } catch (err) {
-      setError(err.response?.data?.error || err.message || 'Erro ao enviar arquivo')
-    } finally {
-      setLoading(false)
-    }
-  }
+  const {
+    file,
+    tipo,
+    loading,
+    error,
+    setTipo,
+    handleFileChange,
+    handleSubmit
+  } = useUpload()
 
   return (
     <div className="upload-container">
