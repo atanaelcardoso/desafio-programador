@@ -2,11 +2,13 @@ import { v4 as uuidv4 } from 'uuid';
 import { transcriptionStore } from '../store/transcriptionStore.js';
 import { parseCartaoPonto } from '../parsers/cartaoPonto.js';
 import { parseHolerite } from '../parsers/holerite.js';
-import * as pdfjsLib from 'pdfjs-dist';
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import Tesseract from 'tesseract.js';
+import { pdf } from 'pdf-to-img';
 
+pdfjsLib.GlobalWorkerOptions.disableWorker = true;
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  '../../node_modules/pdfjs-dist/build/pdf.worker.mjs',
+  '../../node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs',
   import.meta.url
 ).href;
 
@@ -67,25 +69,48 @@ function releaseWorker(workerObj) {
 
 export async function extractTextFromPdf(pdfBuffer) {
   try {
-    const binary = Buffer.isBuffer(pdfBuffer)
-      ? new Uint8Array(pdfBuffer.buffer, pdfBuffer.byteOffset, pdfBuffer.length)
-      : new Uint8Array(pdfBuffer);
+    const pdfCopy = Buffer.from(pdfBuffer);
+    const binary = new Uint8Array(pdfCopy.buffer, pdfCopy.byteOffset, pdfCopy.length);
 
-    const pdf = await pdfjsLib.getDocument({ data: binary }).promise;
+    const pdfDoc = await pdfjsLib.getDocument({
+      data: binary,
+      standardFontDataUrl: new URL('../../node_modules/pdfjs-dist/standard_fonts/', import.meta.url).href,
+      useSystemFonts: true
+    }).promise;
+
     const textPerPage = [];
+    let pageImages = null;
 
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
+    for (let i = 1; i <= pdfDoc.numPages; i++) {
+      const page = await pdfDoc.getPage(i);
       const textContent = await page.getTextContent();
       const text = textContent.items
         .map(item => item.str)
         .join(' ');
 
-      const isEmpty = text.trim().length < 50;
+      const textToValidate = text
+        .replace(/assinado\s+eletronicamente\s+por/gi, '')
+        .replace(/juntado\s+em/gi, '')
+        .replace(/fls\.:\s*\d+/gi, '')
+        .replace(/[\d/:\-\s]+/g, '')
+        .trim();
+
+      const isEmpty = textToValidate.length < 30;
+
+      if (isEmpty && !pageImages) {
+        console.log('📸 Rodapé judicial detectado, mas o conteúdo é uma imagem. Convertendo PDF para imagens via JavaScript puro...');
+        pageImages = [];
+
+        const documentImages = await pdf(pdfBuffer, { scale: 2.0 });
+        for await (const image of documentImages) {
+          pageImages.push(image);
+        }
+      }
 
       textPerPage.push({
         pageNum: i,
-        text: text.trim(),
+        text: isEmpty ? '' : text.trim(),
+        imageBuffer: isEmpty && pageImages ? pageImages[i - 1] : null,
         source: isEmpty ? 'empty' : 'text',
         requiresOCR: isEmpty
       });
@@ -98,15 +123,15 @@ export async function extractTextFromPdf(pdfBuffer) {
   }
 }
 
-async function ocrPageText(pageNum, text, timeout = 30000) {
+async function ocrPageText(pageNum, imageBuffer, timeout = 60000) {
   try {
-    if (!text || text.trim().length === 0) {
+    if (!imageBuffer) {
       return '';
     }
 
     const workerObj = await getAvailableWorker();
 
-    const ocrPromise = workerObj.instance.recognize(text, {
+    const ocrPromise = workerObj.instance.recognize(imageBuffer, {
       rotateAuto: true
     });
 
@@ -120,7 +145,7 @@ async function ocrPageText(pageNum, text, timeout = 30000) {
     return result.data.text.trim();
   } catch (err) {
     console.error(`Erro no OCR página ${pageNum}:`, err.message);
-    return text;
+    return '';
   }
 }
 
@@ -151,13 +176,16 @@ export async function processTranscription(id, pdfBuffer, tipo) {
       }
 
       if (page.requiresOCR) {
-        console.log(`  📸 OCR na página ${page.pageNum}...`);
-        page.text = await ocrPageText(page.pageNum, page.text, 60000);
+        console.log(`  📸 Executando OCR na página ${page.pageNum}...`);
+        page.text = await ocrPageText(page.pageNum, page.imageBuffer, 60000);
         page.source = 'ocr';
       }
 
+      delete page.imageBuffer;
       processedPages.push(page);
     }
+
+    console.log("🔍 TEXTO EXTRAÍDO ENVIADO PARA O PARSER:\n", JSON.stringify(processedPages, null, 2));
 
     let result;
     if (tipo === 'cartao-ponto') {
@@ -196,9 +224,8 @@ export function createTranscription(pdfBuffer, tipo) {
     error: null
   });
 
-  // Enfileirar processamento em background (não aguardar)
   processTranscription(id, pdfBuffer, tipo).catch(err => {
-    console.error('Erro não capturado:', err);
+    console.error('Erro não capturado no processamento em background:', err);
   });
 
   return id;

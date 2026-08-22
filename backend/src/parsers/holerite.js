@@ -3,102 +3,127 @@ export function parseHolerite(textPerPage) {
 
   for (let pageIdx = 0; pageIdx < textPerPage.length; pageIdx++) {
     const { text } = textPerPage[pageIdx];
+    if (!text) continue;
 
-    const normalizedText = text.replace(/\s+/g, ' ');
+    let normalizedText = text.replace(/\s+/g, ' ');
 
-    const blockMarkers = /(?=Folha Normal|Adiantamento\s*-\s*PLR|13\s*Salario)/ig;
-    const blocks = normalizedText.split(blockMarkers);
+    normalizedText = normalizedText
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
 
-    for (const block of blocks) {
-      if (!block.toLowerCase().includes('mês:') && !block.toLowerCase().includes('mes:')) continue;
+    const baseHeaderIndex = normalizedText.toUpperCase().indexOf('BASE CALC IRRF');
+    let textToProcess = normalizedText;
 
-      const competency = extractBlockCompetency(block);
-      if (competency.month === '?') continue;
-
-      const bases = extractBlockBases(block);
-      const fields = extractBlockFieldsRobust(block);
-
-      allParsedPages.push({
-        page: pageIdx + 1,
-        year: competency.year,
-        month: competency.month,
-        fields,
-        bases
-      });
+    if (baseHeaderIndex !== -1) {
+      textToProcess = normalizedText.substring(0, baseHeaderIndex + 150);
+    } else {
+      const folha1EndIndex = normalizedText.toUpperCase().indexOf('RECIBO DE PAGAMENTO', 150);
+      if (folha1EndIndex !== -1) {
+        textToProcess = normalizedText.substring(0, folha1EndIndex + 100);
+      }
     }
+
+    const competency = extractBlockCompetencyRobust(textToProcess, normalizedText);
+    const bases = extractBlockBasesRobust(textToProcess);
+    const fields = extractBlockFieldsRobust(textToProcess);
+
+    allParsedPages.push({
+      page: textPerPage[pageIdx].pageNum || (pageIdx + 1),
+      year: competency.year,
+      month: competency.month,
+      fields,
+      bases
+    });
   }
 
-  const sortedPages = allParsedPages.sort((a, b) => {
-    const dateA = `${a.year}-${a.month}`;
-    const dateB = `${b.year}-${b.month}`;
-    return dateA.localeCompare(dateB);
-  });
-
   return {
-    pages: sortedPages.length > 0 ? sortedPages : [{ page: 1, year: '?', month: '?', fields: [], bases: [] }]
+    pages: allParsedPages.sort((a, b) => {
+      if (a.year === '?' || b.year === '?') return 0;
+      return `${a.year}-${a.month}`.localeCompare(`${b.year}-${b.month}`);
+    })
   };
 }
 
-function extractBlockCompetency(block) {
-  const monthMap = {
-    'jan': '01', 'fev': '02', 'mar': '03', 'abr': '04', 'mai': '05', 'jun': '06',
-    'jul': '07', 'ago': '08', 'set': '09', 'out': '10', 'nov': '11', 'dez': '12'
-  };
+function extractBlockCompetencyRobust(block, fullText) {
+  const text = block.toUpperCase();
+  const fullTextUpper = fullText.toUpperCase();
 
-  const match = block.match(/(?:mês|mes):\s*([a-z]{3})-(\d{2})/i);
-  if (match) {
-    const mStr = match[1].toLowerCase();
-    const yStr = match[2];
-    return {
-      month: monthMap[mStr] || '?',
-      year: `20${yStr}`
-    };
+  const meses = [
+    { regex: /JAN/i, code: '01' },
+    { regex: /FEV/i, code: '02' },
+    { regex: /MAR/i, code: '03' },
+    { regex: /ABR/i, code: '04' },
+    { regex: /MAI/i, code: '05' },
+    { regex: /JUN/i, code: '06' },
+    { regex: /JUL/i, code: '07' },
+    { regex: /AGO/i, code: '08' },
+    { regex: /SET|ETEMBRO|PITSERO/i, code: '09' },
+    { regex: /OUT|ES\s*R/i, code: '10' },
+    { regex: /NOV|IOVEMBRO/i, code: '11' },
+    { regex: /DEZ|EZEMBRO/i, code: '12' }
+  ];
+
+  let month = '?';
+  let year = '?';
+
+  for (const m of meses) {
+    if (m.regex.test(text) || m.regex.test(fullTextUpper)) {
+      if ((m.code === '05' || m.code === '06') && !text.includes('MAIO') && !text.includes('JUNHO') && (text.includes('MENSAL') || fullTextUpper.includes('MENSAL'))) {
+        continue;
+      }
+      month = m.code;
+      break;
+    }
   }
-  return { year: '?', month: '?' };
+
+  if (month === '?' && (fullTextUpper.includes('2020') || text.includes('2020'))) {
+    if (fullTextUpper.includes('ESSEDO') || fullTextUpper.includes('JANEIRO')) month = '01';
+  }
+
+  if (text.includes('13 SALARIO') || text.includes('13º')) {
+    month = '13';
+  }
+
+  let yearMatch = text.match(/\b(2019|2020|2021|2022|2023|2024|2025|2026)\b/);
+  if (!yearMatch) yearMatch = fullTextUpper.match(/\b(2019|2020|2021|2022|2023|2024|2025|2026)\b/);
+
+  if (yearMatch) {
+    year = yearMatch[1];
+  } else {
+    const genericYear = text.match(/\b(20\d{2})\b/);
+    if (genericYear) year = genericYear[1];
+  }
+
+  return { month, year };
 }
 
 function extractBlockFieldsRobust(block) {
   const fields = [];
   const verbasConhecidas = [
-    { code: '0040', label: 'Reembolso VR' },
-    { code: '0091', label: 'Hr Adic Pericul' },
-    { code: '0037', label: 'DSR Adicional' },
-    { code: '0102', label: 'Hr Ext Diu 60%' },
-    { code: '0104', label: 'Hr Ext Diu 80%' },
-    { code: '0124', label: 'Hr Ext Not 80%' },
-    { code: '0311', label: 'Part Lucr Resul' },
-    { code: '0290', label: 'VA Funcionario' },
-    { code: '0404', label: 'Adt Norm Desc' },
-    { code: '0491', label: 'Seguro Vida Fun' },
-    { code: '0499', label: 'Vale Ref Func' },
-    { code: '0511', label: 'INSS Normal' },
-    { code: '0561', label: 'IRF Normal' },
-    { code: '0613', label: 'Smart 500 QC' },
-    { code: '0684', label: 'Vale Gas' },
-    { code: '0820', label: 'Vale Transp Fun' },
-    { code: '0314', label: 'PLR Pago' },
-    { code: '0017', label: 'REMUNERAÇÃOMES' }
+    { code: '0017', label: 'Salário Base', regex: /[;IAlou]ALARIO/i },
+    { code: '0511', label: 'INSS Mês', regex: /[fFv]*nss\s+mes/i },
+    { code: '0561', label: 'IRRF Mês', regex: /[fFrt]*rrf\s+mes/i },
+    { code: '0037', label: 'DSR Comissão', regex: /dsr\s+comiss/i },
+    { code: '0018', label: 'Remuneração Variável', regex: /remuneracao\s+variavel/i },
+    { code: '0499', label: 'Vale Refeição', regex: /vale\s+refeicao/i },
+    { code: '0613', label: 'Assistência Médica', regex: /assist\s+medica/i }
   ];
 
-  for (const verba of verbasConhecidas) {
-    const index = block.indexOf(verba.label);
-    if (index !== -1) {
-      const lookahead = block.substring(index + verba.label.length, index + verba.label.length + 45);
+  const cleanBlock = block.replace(/\s+/g, ' ');
 
-      const numberMatches = lookahead.match(/\b\d{1,3}(?:\.\d{3})*,\d{2}\b|\b0\b/g);
+  for (const verba of verbasConhecidas) {
+    const match = cleanBlock.match(verba.regex);
+    if (match) {
+      const index = match.index;
+      const lookahead = cleanBlock.substring(index + match.length, index + match.length + 50);
+      const numberMatches = lookahead.match(/\d{1,3}(?:\.\d{3})*,\d{2}/g);
 
       if (numberMatches && numberMatches.length > 0) {
-        let value = numberMatches[numberMatches.length - 1];
-        const reference = numberMatches.length > 1 ? numberMatches[0] : '';
-
-        if (value === '0') {
-          value = '0,00';
-        }
-
+        const value = numberMatches[0];
         fields.push({
           code: verba.code,
           label: verba.label,
-          reference: reference === '0' ? '0,00' : reference,
+          reference: '',
           value: value
         });
       }
@@ -108,29 +133,50 @@ function extractBlockFieldsRobust(block) {
   return fields;
 }
 
-function extractBlockBases(block) {
+function extractBlockBasesRobust(block) {
   const bases = [];
-  const baseMapping = [
-    { label: 'Base INSS', search: 'BASEDECALCULODOINSS' },
-    { label: 'Base IRRF', search: 'BASEDECALCULODOIRF' },
-    { label: 'Base FGTS', search: 'BASEDECALCULODOFGTS' },
-    { label: 'FGTS', search: 'VALORDOFGTS' },
-    { label: 'Salário Líquido', search: 'SALARIOLIQUIDONOMES' }
-  ];
+  const textUpper = block.toUpperCase();
 
-  const unifiedText = block.replace(/\s+/g, '');
+  const targetIndex = textUpper.indexOf('SALARIO BASE');
+  let tokens = null;
 
-  for (const item of baseMapping) {
-    const regex = new RegExp(`${item.search}([0-9.,]+)`, 'i');
-    const match = unifiedText.match(regex);
-    if (match) {
-      let val = match[1];
-      const commaIdx = val.indexOf(',');
-      if (commaIdx !== -1 && val.length > commaIdx + 3) {
-        val = val.substring(0, commaIdx + 3);
-      }
-      bases.push({ label: item.label, value: val });
+  if (targetIndex !== -1) {
+    const baseSection = block.substring(targetIndex);
+    const cleanSection = baseSection.replace(/\s+/g, ' ');
+    tokens = cleanSection.match(/\d{1,3}(?:\.\d{3})*,\d{2}/g);
+  }
+
+  if (!tokens || tokens.length < 4) {
+    const cleanBlock = block.replace(/\s+/g, ' ');
+    tokens = cleanBlock.match(/\d{1,3}(?:\.\d{3})*,\d{2}/g);
+  }
+
+  if (tokens && tokens.length >= 4) {
+    const is13 = textUpper.includes('13 SALARIO') || textUpper.includes('13º');
+
+    bases.push({ label: 'Salário Base Contratual', value: tokens[0] });
+    bases.push({ label: is13 ? 'Base INSS 13º' : 'Base INSS', value: tokens[1] });
+    bases.push({ label: is13 ? 'Base FGTS 13º' : 'Base FGTS', value: tokens[2] });
+    bases.push({ label: is13 ? 'FGTS 13º Mês' : 'FGTS Mês', value: tokens[3] });
+
+    if (tokens[4]) {
+      bases.push({ label: is13 ? 'Base IRRF 13º' : 'Base IRRF', value: tokens[4] });
     }
+  }
+
+  if (bases.length === 0) {
+    const tokensGlobais = block.match(/\d{1,3}(?:\.\d{3})*,\d{2}/g);
+    if (tokensGlobais && tokensGlobais.length >= 4) {
+      bases.push({ label: 'Salário Base Contratual', value: tokensGlobais[tokensGlobais.length - 5] || '?' });
+      bases.push({ label: 'Base INSS', value: tokensGlobais[tokensGlobais.length - 4] || '?' });
+      bases.push({ label: 'Base FGTS', value: tokensGlobais[tokensGlobais.length - 3] || '?' });
+      bases.push({ label: 'FGTS Mês', value: tokensGlobais[tokensGlobais.length - 2] || '?' });
+    }
+  }
+
+  const liquidoMatch = block.match(/(?:liquido|iquido)\s*a\s*receber\s*([\d.,]+)/i);
+  if (liquidoMatch && liquidoMatch[1]) {
+    bases.push({ label: 'Salário Líquido', value: liquidoMatch[1] });
   }
 
   return bases;

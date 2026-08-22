@@ -1,9 +1,12 @@
-import { useState } from 'react'
+import { useState, useContext } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../infra/api/api'
+import { AppContext } from '../App'
 
 export function useUpload() {
     const navigate = useNavigate()
+    const { transcription, setTranscription } = useContext(AppContext)
+
     const [file, setFile] = useState(null)
     const [tipo, setTipo] = useState('cartao-ponto')
     const [loading, setLoading] = useState(false)
@@ -46,6 +49,8 @@ export function useUpload() {
             const responseData = await api.uploadDocument(formData)
             const { id } = responseData
 
+            setTranscription({ id, tipo, status: 'processando', value: null, error: null })
+
             navigate(`/review/${id}`)
         } catch (err) {
             setError(err.response?.data?.error || err.message || 'Erro ao enviar arquivo')
@@ -59,6 +64,7 @@ export function useUpload() {
         tipo,
         loading,
         error,
+        transcription,
         setTipo,
         handleFileChange,
         handleSubmit
