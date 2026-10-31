@@ -10,6 +10,8 @@ export function useReview() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [editError, setEditError] = useState(null);
   const [downloadFormat, setDownloadFormat] = useState("xlsx");
 
   const [status, setStatus] = useState("processando");
@@ -87,12 +89,25 @@ export function useReview() {
 
   const handleSave = async () => {
     try {
-      await api.update(id, data.value);
+      const value = JSON.parse(draft);
+      const updated = await api.update(id, value);
+      setData(previous => ({ ...previous, ...updated }));
       setEditing(false);
+      setEditError(null);
       alert("✅ Salvo com sucesso!");
     } catch (err) {
-      alert("❌ Erro ao salvar: " + err.message);
+      setEditError(err instanceof SyntaxError
+        ? "O JSON está inválido. Corrija a estrutura antes de salvar."
+        : "Não foi possível salvar a transcrição: " + err.message);
     }
+  };
+
+  const toggleEditing = () => {
+    if (!editing) {
+      setDraft(JSON.stringify(data.value, null, 2));
+      setEditError(null);
+    }
+    setEditing(!editing);
   };
 
   return {
@@ -102,7 +117,10 @@ export function useReview() {
     editing,
     downloadFormat,
     status,
-    setEditing,
+    draft,
+    editError,
+    setDraft,
+    toggleEditing,
     setDownloadFormat,
     handleDownload,
     handleSave,

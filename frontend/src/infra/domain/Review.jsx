@@ -10,7 +10,10 @@ export default function Review() {
     editing,
     downloadFormat,
     status,
-    setEditing,
+    draft,
+    editError,
+    setDraft,
+    toggleEditing,
     setDownloadFormat,
     handleDownload,
     handleSave,
@@ -67,18 +70,40 @@ export default function Review() {
             </button>
           )}
 
-          <button onClick={() => setEditing(!editing)} className="edit-button">
-            {editing ? '🔒 Concluir Edição' : '✏️ Editar'}
+          <button onClick={toggleEditing} className="edit-button">
+            {editing ? 'Cancelar edição' : '✏️ Editar JSON'}
           </button>
         </div>
       </div>
 
+      {data.value.avisos?.length > 0 && (
+        <div className="review-warning" role="alert">
+          <strong>⚠️ Confira a leitura antes de baixar:</strong>
+          <ul>
+            {data.value.avisos.map((aviso, index) => <li key={index}>{aviso}</li>)}
+          </ul>
+        </div>
+      )}
+
       <div className="review-content">
         <div className="data-section">
           <h3>📊 Dados Extraídos</h3>
-          <pre className="json-preview">
-            {JSON.stringify(data.value, null, 2)}
-          </pre>
+          {editing ? (
+            <>
+              <textarea
+                className="json-editor"
+                aria-label="Editar dados extraídos em JSON"
+                value={draft}
+                onChange={event => setDraft(event.target.value)}
+                spellCheck="false"
+              />
+              {editError && <p className="edit-error" role="alert">{editError}</p>}
+            </>
+          ) : (
+            <pre className="json-preview">
+              {JSON.stringify(data.value, null, 2)}
+            </pre>
+          )}
         </div>
 
         <div className="download-section">
